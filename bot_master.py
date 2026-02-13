@@ -326,42 +326,44 @@ class AutonomousBot:
             return {"decision": "GO", "reason": f"Erro na IA ({e}), seguindo sinal técnico."}
 
     async def find_best_opportunity(self) -> Optional[Dict]:
-        """Encontra a melhor oportunidade de entrada."""
+        """Encontra a melhor oportunidade de entrada (OTIMIZADO: IA só para TOP 1)."""
         best_opportunity = None
         best_score = 0
 
+        # FASE 1: Encontrar o melhor sinal TÉCNICO (sem IA ainda)
         for symbol in self.symbols:
             # Não abrir se já tem posição
             if symbol in self.active_trades:
                 continue
 
+            # Pular se a IA deu NO-GO recentemente (cooldown de 30 min)
+            if self.ai_client:
+                last_ai = self.last_ai_analysis.get(symbol)
+                if last_ai and last_ai.get('decision') == 'NO-GO':
+                    time_diff = datetime.now() - last_ai.get('timestamp', datetime.min)
+                    if time_diff.total_seconds() < 1800:  # 30 minutos de cooldown
+                        continue
+
             try:
                 analysis = await self.analyze_symbol(symbol)
 
                 if analysis['strength'] >= self.min_signal_strength and analysis['trend'] != 'NEUTRAL':
-                    # FILTRO DE IA (Opcional se configurado)
-                    if self.ai_client:
-                        # 🧠 Lógica de Cooldown para evitar gastos excessivos
-                        last_ai = self.last_ai_analysis.get(symbol)
-                        if last_ai and last_ai.get('decision') == 'NO-GO':
-                            time_diff = datetime.now() - last_ai.get('timestamp', datetime.min)
-                            if time_diff.total_seconds() < 600: # 10 minutos de "castigo" para a moeda
-                                # Pular sem chamar a API de novo
-                                continue
-
-                        ai_result = await self.analyze_market_with_ai(symbol, analysis)
-                        if ai_result.get('decision') == 'NO-GO':
-                            print(f"{Fore.YELLOW}[{self.now()}] 🧠 IA bloqueou entrada em {symbol}: {ai_result.get('reason')}")
-                            continue
-                        else:
-                            print(f"{Fore.CYAN}[{self.now()}] 🧠 IA validou entrada em {symbol}: {ai_result.get('reason')}")
-                    
                     if analysis['strength'] > best_score:
                         best_score = analysis['strength']
                         best_opportunity = analysis
 
             except Exception as e:
                 continue
+
+        # FASE 2: Validar SÓ o melhor sinal com IA (se existir)
+        if best_opportunity and self.ai_client:
+            ai_result = await self.analyze_market_with_ai(best_opportunity['symbol'], best_opportunity)
+
+            if ai_result.get('decision') == 'NO-GO':
+                print(f"{Fore.YELLOW}[{self.now()}] 🧠 IA bloqueou {best_opportunity['symbol']}: {ai_result.get('reason')}")
+                return None  # IA rejeitou, retornar sem oportunidade
+            else:
+                print(f"{Fore.GREEN}[{self.now()}] 🧠 IA aprovou {best_opportunity['symbol']}: {ai_result.get('reason')}")
 
         return best_opportunity
 
