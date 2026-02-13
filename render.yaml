@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: binance-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      - key: CAPITAL_INICIAL
+        value: "100"
+      - key: RISCO_MAXIMO_POR_OPERACAO
+        value: "0.05"
+      - key: ALAVANCAGEM_PADRAO
+        value: "20"
+      - key: STOP_LOSS_PERCENTUAL
+        value: "0.015"
+      - key: TAKE_PROFIT_PERCENTUAL
+        value: "0.03"
+    startCommand: bash start.sh
