@@ -697,17 +697,32 @@ class AutonomousBot:
             # Obter saldo e calcular quantidade
             account = await self.client.futures_account()
             balance = float(account['totalWalletBalance'])
-            
+
+            # Obter MIN_NOTIONAL correto da Binance
+            min_notional_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'MIN_NOTIONAL'), None)
+            min_notional = float(min_notional_filter['notional']) if min_notional_filter else 5.0
+
             risk_amount = balance * self.risk_per_trade
             entry_price = opp['entry']
             quantity = (risk_amount * self.leverage) / entry_price
+
+            # Garantir quantidade mínima baseada no MIN_NOTIONAL
+            min_qty = (min_notional * 1.1) / entry_price  # 10% de margem de segurança
+
+            # Usar o maior entre o calculado e o mínimo
+            quantity = max(quantity, min_qty)
             quantity = round(quantity, qty_precision)
 
-            # Validar Notional Mínimo (Evita erro -4164)
-            if not await self._check_min_notional(symbol, quantity, entry_price):
-                print(f"{Fore.YELLOW}[{self.now()}] ⚠️ Ajustando quantidade para mínimo notional...")
-                # Tenta aumentar para o mínimo (simples: 2x o risco ou $6 USD)
-                quantity = round(6.0 / entry_price, qty_precision) 
+            # Validar novamente
+            if quantity <= 0:
+                print(f"{Fore.RED}[{self.now()}] ❌ Quantidade inválida após cálculo: {quantity}")
+                return False
+
+            # Verificar notional final
+            final_notional = quantity * entry_price
+            if final_notional < min_notional:
+                print(f"{Fore.RED}[{self.now()}] ❌ Notional ${final_notional:.2f} < Mínimo ${min_notional}")
+                return False 
 
             # Configurar alavancagem
             await self.client.futures_change_leverage(symbol=symbol, leverage=self.leverage)
