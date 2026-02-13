@@ -57,7 +57,7 @@ class AutonomousBot:
         self.scan_interval = int(os.getenv('SCAN_INTERVAL', 60))        # Escanear a cada X segundos
         self.monitor_interval = int(os.getenv('MONITOR_INTERVAL', 15))  # Monitorar a cada X segundos
         self.max_positions = int(os.getenv('MAX_POSITIONS', 3))         # Máximo de posições simultâneas
-        self.min_signal_strength = int(os.getenv('MIN_SIGNAL_STRENGTH', 35)) # Força mínima para entrar
+        self.min_signal_strength = int(os.getenv('MIN_SIGNAL_STRENGTH', 28)) # Força mínima para entrar (ajustado: 35→28)
 
         # Pares monitorados (expandido para mais oportunidades)
         self.symbols = [
@@ -415,9 +415,9 @@ class AutonomousBot:
             elif latest['ema_9'] < latest['ema_21'] < latest['ema_50']:
                 bearish_score += 25
 
-            if latest['rsi'] < 30:
+            if latest['rsi'] < 35:
                 bullish_score += 20
-            elif latest['rsi'] > 70:
+            elif latest['rsi'] > 65:
                 bearish_score += 20
 
             macd_diff = latest['macd'] - latest['macd_signal']
@@ -435,26 +435,26 @@ class AutonomousBot:
             vol_ma = df['volume'].rolling(20).mean().iloc[-1]
             relative_volume = latest['volume'] / vol_ma if vol_ma > 0 else 1.0
             
-            if relative_volume > 1.5:
+            if relative_volume > 0.8:
                 bullish_score += 10
                 bearish_score += 10
 
             trend = 'NEUTRAL'
             strength = max(bullish_score, bearish_score)
 
-            if bullish_score > bearish_score + 10:
+            if bullish_score > bearish_score + 7:
                 trend = 'LONG'
-            elif bearish_score > bullish_score + 10:
+            elif bearish_score > bullish_score + 7:
                 trend = 'SHORT'
 
             entry_price = latest['close']
             atr = (df['high'] - df['low']).rolling(14).mean().iloc[-1]
 
             if trend == 'LONG':
-                sl = entry_price - (atr * 1.5)
+                sl = entry_price - (atr * 1.8)
                 tp = entry_price + (atr * 3)
             elif trend == 'SHORT':
-                sl = entry_price + (atr * 1.5)
+                sl = entry_price + (atr * 1.8)
                 tp = entry_price - (atr * 3)
             else:
                 sl = tp = entry_price
@@ -585,48 +585,82 @@ class AutonomousBot:
 
             # Calcular níveis
             if side == 'LONG':
-                calculated_sl = entry_price - (atr * 1.5)
+                calculated_sl = entry_price - (atr * 1.8)
                 calculated_tp = entry_price + (atr * 3)
             else:
-                calculated_sl = entry_price + (atr * 1.5)
+                calculated_sl = entry_price + (atr * 1.8)
                 calculated_tp = entry_price - (atr * 3)
             
             calculated_sl = round(calculated_sl, price_precision)
             calculated_tp = round(calculated_tp, price_precision)
 
-            # Colocar SL se faltar
+            # Colocar SL se faltar com Retry/Fallback
             if not sl_order:
                 sl_side = 'SELL' if side == 'LONG' else 'BUY'
-                try:
-                    sl_order_obj = await self.client.futures_create_order(
-                        symbol=symbol,
-                        side=sl_side,
-                        type='STOP_MARKET',
-                        stopPrice=calculated_sl,
-                        closePosition=True,
-                        workingType='MARK_PRICE',
-                        priceProtect=True
-                    )
-                    print(f"{Fore.YELLOW}[{self.now()}] 🛡️  Auto-SL colocado: ${calculated_sl}")
-                except Exception as e:
-                    print(f"{Fore.RED}[{self.now()}] Falha ao colocar Auto-SL: {e}")
+                sl_success = False
+                
+                for attempt in range(3):
+                    try:
+                        # Tenta STOP_MARKET
+                        await self.client.futures_create_order(
+                            symbol=symbol,
+                            side=sl_side,
+                            type='STOP_MARKET',
+                            stopPrice=calculated_sl,
+                            closePosition=True,
+                            workingType='MARK_PRICE',
+                            priceProtect=True
+                        )
+                        print(f"{Fore.YELLOW}[{self.now()}] 🛡️  Auto-SL (Market) colocado: ${calculated_sl}")
+                        sl_success = True
+                        break
+                    except Exception as e:
+                        err_str = str(e)
+                        if "code=-4120" in err_str or "Order type not supported" in err_str:
+                            # Fallback para STOP (Limit)
+                            try:
+                                limit_price = calculated_sl * (0.999 if sl_side == 'SELL' else 1.001)
+                                limit_price = round(limit_price, price_precision)
+                                await self.client.futures_create_order(
+                                    symbol=symbol,
+                                    side=sl_side,
+                                    type='STOP',
+                                    quantity=quantity,
+                                    price=limit_price,
+                                    stopPrice=calculated_sl,
+                                    timeInForce='GTC'
+                                )
+                                print(f"{Fore.YELLOW}[{self.now()}] 🛡️  Auto-SL (Limit) colocado: ${calculated_sl}")
+                                sl_success = True
+                                break
+                            except Exception as e2:
+                                print(f"{Fore.RED}[{self.now()}] Falha fallback Auto-SL: {e2}")
+                        elif "code=-4045" in err_str:
+                            print(f"{Fore.RED}[{self.now()}] ⚠️ Limite de STOP atingido na Binance! Cancele ordens antigas.")
+                            break
+                        
+                        await asyncio.sleep(1)
 
-            # Colocar TP se faltar
+            # Colocar TP se faltar com Retry
             if not tp_order:
                 tp_side = 'SELL' if side == 'LONG' else 'BUY'
-                try:
-                    tp_order_obj = await self.client.futures_create_order(
-                        symbol=symbol,
-                        side=tp_side,
-                        type='LIMIT',
-                        quantity=quantity,
-                        price=calculated_tp,
-                        timeInForce='GTC',
-                        reduceOnly=True
-                    )
-                    print(f"{Fore.GREEN}[{self.now()}] 🎯 Auto-TP colocado: ${calculated_tp}")
-                except Exception as e:
-                    print(f"{Fore.RED}[{self.now()}] Falha ao colocar Auto-TP: {e}")
+                for attempt in range(3):
+                    try:
+                        await self.client.futures_create_order(
+                            symbol=symbol,
+                            side=tp_side,
+                            type='LIMIT',
+                            quantity=quantity,
+                            price=calculated_tp,
+                            timeInForce='GTC',
+                            reduceOnly=True
+                        )
+                        print(f"{Fore.GREEN}[{self.now()}] 🎯 Auto-TP colocado: ${calculated_tp}")
+                        break
+                    except Exception as e:
+                        if attempt == 2:
+                            print(f"{Fore.RED}[{self.now()}] Falha ao colocar Auto-TP: {e}")
+                        await asyncio.sleep(1)
                     
         except Exception as e:
             print(f"{Fore.RED}[{self.now()}] Erro no cálculo de Auto-Heal: {e}")
