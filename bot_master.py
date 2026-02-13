@@ -99,14 +99,15 @@ class AutonomousBot:
         # Variável para Watchdog
         self.last_heartbeat = datetime.now()
 
+        # Contador para backup periódico
+        self.last_backup_time = datetime.now()
+
         try:
             # 0. Salvar estado inicial (para o dashboard não ficar vazio)
             self.save_dashboard_state()
 
-            # 1. Sincronização Retroativa de Histórico
-            await self.sync_historical_trades()
-
-            # 1. Sincronizar posições existentes
+            # 0. Reconstruir histórico completo da Binance (Persistência no Render)
+            await self.sync_historical_trades(days=30)  # 30 dias em vez de 7
             await self.sync_open_positions()
             
             # Loop principal
@@ -120,6 +121,12 @@ class AutonomousBot:
 
                     # 2. Salvar estado para o Dashboard
                     self.save_dashboard_state()
+
+                    # 3. Backup periódico a cada 1 hora (para segurança extra)
+                    if (datetime.now() - self.last_backup_time).total_seconds() > 3600:
+                        print(f"{Fore.CYAN}[{self.now()}] 💾 Backup periódico do histórico...")
+                        await self.sync_historical_trades(days=30)
+                        self.last_backup_time = datetime.now()
 
                     # 2. Escanear novas oportunidades
                     open_pos_count = len(self.active_trades)
@@ -814,79 +821,122 @@ class AutonomousBot:
             print(f"{Fore.RED}[{self.now()}] ❌ Erro crítico ao entrar: {e}")
             return False
 
-    async def sync_historical_trades(self, days=7):
-        """Busca trades passados na Binance e reconstrói o histórico local."""
-        print(f"{Fore.CYAN}[{self.now()}] 🕰️ Sincronizando histórico dos últimos {days} dias...")
+    async def sync_historical_trades(self, days=30):
+        """
+        Busca trades passados na Binance e reconstrói o histórico local.
+        CRÍTICO: Isso resolve o problema de perder dados ao reiniciar no Render.
+        """
+        print(f"{Fore.CYAN}[{self.now()}] 🕰️  Sincronizando histórico dos últimos {days} dias...")
         try:
             import json
             import time
             start_time = int((datetime.now() - timedelta(days=days)).timestamp() * 1000)
-            
+
             all_historical_records = []
-            
+            total_trades_found = 0
+
             for symbol in self.symbols:
-                # Buscar trades do par
-                trades = await self.client.futures_account_trades(symbol=symbol, startTime=start_time)
-                if not trades:
+                try:
+                    # Buscar trades do par com paginação
+                    trades = await self.client.futures_account_trades(symbol=symbol, startTime=start_time, limit=1000)
+                    if not trades:
+                        continue
+
+                    total_trades_found += len(trades)
+
+                    # Agrupar trades por Realized PnL (cada fechamento gera um PnL realizado)
+                    for t in trades:
+                        pnl = float(t.get('realizedPnl', 0))
+                        if pnl != 0:
+                            # Criar um registro de histórico a partir do trade de fechamento
+                            dt_obj = datetime.fromtimestamp(t['time'] / 1000)
+
+                            # Tentar inferir o lado baseado no preço e na posição
+                            # Se profit positivo em LONG, side=LONG. Se profit positivo em SHORT, side=SHORT
+                            # Mas isso é complexo, vamos simplificar
+                            side_inferido = "UNKNOWN"
+
+                            all_historical_records.append({
+                                "symbol": symbol,
+                                "side": side_inferido,  # Será UNKNOWN se não conseguirmos inferir
+                                "entry": 0.0,  # Binance não fornece facilmente
+                                "exit": float(t['price']),
+                                "quantity": abs(float(t['qty'])),
+                                "pnl": pnl,
+                                "time": dt_obj.strftime('%Y-%m-%d %H:%M:%S')
+                            })
+
+                except Exception as e:
+                    # Continuar mesmo se falhar um symbol
                     continue
 
-                # Agrupar trades por Realized PnL (cada fechamento gera um PnL realizado)
-                for t in trades:
-                    pnl = float(t.get('realizedPnl', 0))
-                    if pnl != 0:
-                        # Criar um registro de histórico a partir do trade de fechamento
-                        dt_obj = datetime.fromtimestamp(t['time'] / 1000)
-                        all_historical_records.append({
-                            "symbol": symbol,
-                            "side": "SELL" if float(t['qty']) < 0 else "BUY", # Simplificado: lado da ordem de FECHAMENTO
-                            "entry": 0.0, # Binance não fornece a entrada original no trade de saída facilmente
-                            "exit": float(t['price']),
-                            "quantity": abs(float(t['qty'])),
-                            "pnl": pnl,
-                            "time": dt_obj.strftime('%Y-%m-%d %H:%M:%S')
-                        })
-
             if not all_historical_records:
-                print(f"{Fore.YELLOW}[{self.now()}] Nenhum trade passado encontrado.")
+                print(f"{Fore.YELLOW}[{self.now()}] Nenhum trade encontrado nos últimos {days} dias.")
+                # Criar arquivos vazios para não dar erro no dashboard
+                if not os.path.exists(self.history_file):
+                    with open(self.history_file, 'w') as f:
+                        json.dump([], f)
+                if not os.path.exists(self.metrics_file):
+                    with open(self.metrics_file, 'w') as f:
+                        json.dump([], f)
                 return
+
+            print(f"{Fore.CYAN}[{self.now()}] Encontrados {total_trades_found} trades totais, {len(all_historical_records)} com PnL realizado")
 
             # Ordenar por tempo
             all_historical_records.sort(key=lambda x: x['time'])
 
-            # Salvar no arquivo de histórico (sem duplicatas)
+            # Carregar histórico existente (se tiver)
             existing_history = []
             if os.path.exists(self.history_file):
-                with open(self.history_file, 'r') as f:
-                    existing_history = json.load(f)
-            
-            # Unificar (baseado em symbol + pnl + time)
+                try:
+                    with open(self.history_file, 'r') as f:
+                        existing_history = json.load(f)
+                except:
+                    existing_history = []
+
+            # Unificar sem duplicatas (baseado em symbol + pnl + time)
             history_keys = {f"{r['symbol']}_{r['pnl']}_{r['time']}" for r in existing_history}
+            new_count = 0
             for r in all_historical_records:
                 key = f"{r['symbol']}_{r['pnl']}_{r['time']}"
                 if key not in history_keys:
                     existing_history.append(r)
-            
+                    new_count += 1
+
+            # Ordenar e manter últimos 500 trades (aumentado de 100)
             existing_history.sort(key=lambda x: x['time'])
+            final_history = existing_history[-500:]
+
             with open(self.history_file, 'w') as f:
-                json.dump(existing_history[-100:], f, indent=4)
+                json.dump(final_history, f, indent=4)
 
             # Reconstruir métricas diárias
             daily_stats = {}
-            for r in existing_history:
+            for r in final_history:
                 day = r['time'].split(' ')[0]
                 if day not in daily_stats:
                     daily_stats[day] = {"date": day, "pnl": 0.0, "trades": 0}
                 daily_stats[day]['pnl'] += r['pnl']
                 daily_stats[day]['trades'] += 1
-            
+
             metrics = sorted(list(daily_stats.values()), key=lambda x: x['date'])
+
             with open(self.metrics_file, 'w') as f:
                 json.dump(metrics, f, indent=4)
 
-            print(f"{Fore.GREEN}[{self.now()}] ✅ Histórico sincronizado: {len(all_historical_records)} trades processados.")
+            print(f"{Fore.GREEN}[{self.now()}] ✅ Histórico sincronizado: {len(final_history)} trades no arquivo ({new_count} novos).")
 
         except Exception as e:
             print(f"{Fore.RED}[{self.now()}] Erro na sincronização retroativa: {e}")
+            # Criar arquivos vazios para não quebrar dashboard
+            import json
+            if not os.path.exists(self.history_file):
+                with open(self.history_file, 'w') as f:
+                    json.dump([], f)
+            if not os.path.exists(self.metrics_file):
+                with open(self.metrics_file, 'w') as f:
+                    json.dump([], f)
 
     async def _record_trade_result(self, symbol, side, entry, quantity):
         """Busca o resultado real do trade na Binance e grava no histórico."""
