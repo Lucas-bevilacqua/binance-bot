@@ -277,32 +277,28 @@ class AutonomousBot:
             history_str = "\n".join([f"- Preço: ${h['price']}, Vol: {h['vol']}" for h in history])
 
             prompt = f"""
-            Você é um trader profissional sênior de criptomoedas especialista em Price Action e Fluxo.
-            Analise o seguinte cenário para o par {symbol} e decida se a entrada é segura.
+            Você é um "Scalper Agressivo de Alta Frequência" especialista em capturar pequenos movimentos rápidos (scalping) em criptomoedas.
             
-            DADOS ATUAIS (AGORA):
-            - Tendência Técnica: {signal_data['trend']}
-            - Força do sinal: {signal_data['strength']}/100
-            - Preço Atual: ${signal_data.get('entry', 'N/A')}
-            - RSI (14): {signals.get('rsi', 'N/A'):.2f}
-            - MACD Hist: {signals.get('macd', 'N/A'):.6f}
-            - Volume Relativo: {signals.get('rel_volume', 1.0):.2f}x (vs média)
-            - Médias (EMA): 9: {signals.get('ema_9'):.4f}, 21: {signals.get('ema_21'):.4f}, 50: {signals.get('ema_50'):.4f}
-            - Bandas de Bollinger: Sup: {signals.get('bb_upper'):.4f}, Inf: {signals.get('bb_lower'):.4f}
+            Analise o cenário para {symbol} e decida se entramos para um trade rápido.
             
-            HISTÓRICO RECENTE (Últimos 5 candles de 15m):
-            {history_str}
+            DADOS TÉCNICOS:
+            - Tendência: {signal_data['trend']}
+            - Preço: ${signal_data.get('entry')}
+            - RSI: {signals.get('rsi'):.2f} (Alvo: Scalping aceita RSI até 75 para LONG ou 25 para SHORT)
+            - MACD: {signals.get('macd'):.6f}
+            - Volume: {signals.get('rel_volume'):.2f}x (0.5x+ já é aceitável se a tendência for forte)
             
-            CRITÉRIOS DE ANÁLISE:
-            1. O volume está acompanhando o movimento? (Volume alto em rompimento é bom).
-            2. O preço está "esticado" demais (exaustão)?
-            3. As médias estão alinhadas a favor da tendência?
+            REGRAS DE DECISÃO:
+            1. Seja menos rígido: Se a tendência (EMA) for clara, ignore se o volume estiver um pouco baixo.
+            2. Não tenha medo de "comprar o topo" se o momentum for forte.
+            3. Responda APENAS em JSON.
             
-            REGRAS DE RESPOSTA:
-            1. Responda APENAS em formato JSON.
-            2. 'decision': 'GO' ou 'NO-GO'.
-            3. 'sentiment': de 0 a 100.
-            4. 'reason': Explicação técnica curta e profissional em português.
+            JSON FORMAT:
+            {{
+                "decision": "GO" ou "NO-GO",
+                "sentiment": 0-100,
+                "reason": "Explicação curta e agressiva"
+            }}
             """
 
             response = self.ai_client.chat.completions.create(
