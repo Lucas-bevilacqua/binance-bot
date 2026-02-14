@@ -1,0 +1,34 @@
+# ============================================================================
+# RENDER WEB SERVICE - DASHBOARD PROFISSIONAL (NOVO)
+# ============================================================================
+# Criar como NOVO serviço para garantir deploy limpo
+# ============================================================================
+
+services:
+  - type: web
+    name: binance-dashboard-pro
+    runtime: python
+    plan: free
+    region: frankfurt
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: PORT
+        value: "8501"
+      - key: DATABASE_URL
+        value: postgresql://bot_binance_user:2yT3u1JBiSintBbYfwmNlkJlSMmNJnJq@dpg-d686o9jnv86c73e914jg-a.frankfurt-postgres.render.com/bot_binance
+      - key: STREAMLIT_SERVER_HEADLESS
+        value: "true"
+      - key: STREAMLIT_SERVER_ADDRESS
+        value: 0.0.0.0
+
+    # Build settings
+    buildCommand: pip install -r requirements.txt && pip install plotly
+    startCommand: streamlit run dashboard_pro.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+
+    # Health check
+    healthCheckPath: /_stcore/health
+
+    # Deploy do branch main
+    branch: main
