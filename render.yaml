@@ -70,8 +70,8 @@ services:
         value: 0.0.0.0
 
     # Build settings
-    buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run dashboard_db.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+    buildCommand: pip install -r requirements.txt && pip install plotly
+    startCommand: streamlit run dashboard_pro.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
 
     # Health check
     healthCheckPath: /_stcore/health
