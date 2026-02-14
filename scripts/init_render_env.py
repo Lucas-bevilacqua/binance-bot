@@ -44,11 +44,15 @@ def log(message: str, level: str = 'info'):
 
 
 async def check_database_connection() -> bool:
-    """Verificar se DATABASE_URL está configurada."""
+    """Verificar se DATABASE_URL esta configurada."""
     db_url = os.getenv('DATABASE_URL')
     if not db_url:
-        log("DATABASE_URL não configurada. Persistência PostgreSQL desativada.", 'warning')
+        log("DATABASE_URL nao configurada. Persistencia PostgreSQL desativada.", 'warning')
         return False
+
+    # Add SSL for Render databases
+    if '?' not in db_url and 'sslmode=' not in db_url:
+        db_url += '?sslmode=require'
 
     try:
         import asyncpg
@@ -57,7 +61,7 @@ async def check_database_connection() -> bool:
             timeout=10
         )
         await conn.close()
-        log("Conexão com PostgreSQL OK!", 'ok')
+        log("Conexao com PostgreSQL OK!", 'ok')
         return True
     except Exception as e:
         log(f"Erro ao conectar ao PostgreSQL: {e}", 'error')
@@ -65,7 +69,7 @@ async def check_database_connection() -> bool:
 
 
 async def ensure_tables_exist():
-    """Criar tabelas se não existirem."""
+    """Criar tabelas se nao existirem."""
     try:
         import asyncpg
         from colorama import Fore, Style
@@ -73,6 +77,10 @@ async def ensure_tables_exist():
         db_url = os.getenv('DATABASE_URL')
         if not db_url:
             return
+
+        # Add SSL for Render databases
+        if '?' not in db_url and 'sslmode=' not in db_url:
+            db_url += '?sslmode=require'
 
         conn = await asyncpg.connect(db_url)
 
@@ -135,10 +143,14 @@ async def migrate_json_to_db():
         if not db_url:
             return
 
-        # Verificar se há JSON para migrar
+        # Add SSL for Render databases
+        if '?' not in db_url and 'sslmode=' not in db_url:
+            db_url += '?sslmode=require'
+
+        # Verificar se ha JSON para migrar
         history_file = ROOT_DIR / 'trade_history.json'
         if not history_file.exists():
-            log("Nenhum JSON histórico para migrar.", 'info')
+            log("Nenhum JSON historico para migrar.", 'info')
             return
 
         import json
@@ -146,7 +158,7 @@ async def migrate_json_to_db():
             history = json.load(f)
 
         if not history:
-            log("Histórico JSON vazio.", 'info')
+            log("Historico JSON vazio.", 'info')
             return
 
         log(f"Migrando {len(history)} trades do JSON para PostgreSQL...", 'info')

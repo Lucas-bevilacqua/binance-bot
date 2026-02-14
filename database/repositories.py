@@ -27,13 +27,17 @@ class DatabaseRepository:
     def __init__(self):
         self.database_url = os.getenv('DATABASE_URL')
         if not self.database_url:
-            raise ValueError("DATABASE_URL não configurado!")
+            raise ValueError("DATABASE_URL nao configurado!")
+
+        # Add SSL for Render databases
+        if '?' not in self.database_url and 'sslmode=' not in self.database_url:
+            self.database_url += '?sslmode=require'
 
         self.pool: Optional[asyncpg.Pool] = None
         self._lock = asyncio.Lock()
 
     async def connect(self):
-        """Criar pool de conexões."""
+        """Criar pool de conexoes."""
         if self.pool is None:
             self.pool = await asyncpg.create_pool(
                 self.database_url,
@@ -41,7 +45,7 @@ class DatabaseRepository:
                 max_size=10,
                 command_timeout=60
             )
-            print(f"✅ Conectado ao PostgreSQL")
+            print(f"Conectado ao PostgreSQL")
 
     async def close(self):
         """Fechar pool de conexões."""
