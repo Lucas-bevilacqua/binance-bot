@@ -71,7 +71,7 @@ services:
 
     # Build settings
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run dashboard.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+    startCommand: streamlit run dashboard_db.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
 
     # Health check
     healthCheckPath: /_stcore/health
