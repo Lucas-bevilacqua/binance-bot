@@ -1,0 +1,73 @@
+# ============================================================================
+# CONFIGURAÇÃO SEPARADA PARA DASHBOARD STREAMLIT
+# ============================================================================
+# Use este arquivo para deploy isolado do dashboard
+
+services:
+  - type: web
+    name: binance-dashboard
+    runtime: python
+    env: python
+    plan: free
+
+    # Build configuration
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+
+    # Start command para Streamlit no Render
+    startCommand: |
+      streamlit run dashboard.py \
+        --server.port=$PORT \
+        --server.address=0.0.0.0 \
+        --server.headless=true \
+        --server.enableCORS=false \
+        --server.enableXsrfProtection=true
+
+    # Environment variables
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+      - key: PORT
+        # Render injeta esta variável automaticamente
+        generateValue: true
+
+      - key: STREAMLIT_SERVER_HEADLESS
+        value: true
+
+      - key: STREAMLIT_SERVER_ADDRESS
+        value: 0.0.0.0
+
+      - key: STREAMLIT_SERVER_PORT
+        # Deixar o Render definir via $PORT
+        value: ""
+
+      - key: DATABASE_URL
+        # Conectar ao banco interno
+        fromDatabase:
+          name: binance-bot-db
+          property: internalURL
+
+      - key: DASHBOARD_REFRESH_INTERVAL
+        value: 10
+
+# --------------------------------------------------------------------------
+# NOTAS
+# --------------------------------------------------------------------------
+#
+# DEPLOY ISOLADO:
+#   Se quiser fazer deploy apenas do dashboard, use este blueprint separado.
+#   No Dashboard Render: New -> Blueprint -> Select this file.
+#
+# CONEXÃO COM DADOS:
+#   O dashboard precisa acessar os dados do bot.
+#   Opções:
+#   1. Ambos no mesmo Render: conectar via DATABASE_URL
+#   2. Dashboard lê JSON compartilhado (requer disco compartilhado)
+#   3. Dashboard com API endpoint no bot (mais complexo)
+#
+# SEGURANÇA:
+#   - Considere adicionar autenticação básica
+#   - Ou usar Streamlit Auth para login
+#   - Restringir acesso por IP se for privado

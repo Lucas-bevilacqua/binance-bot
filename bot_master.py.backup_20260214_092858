@@ -35,21 +35,7 @@ if sys.platform == 'win32':
 init(autoreset=True)
 dotenv.load_dotenv()
 
-# ========================================
-# PERSISTÊNCIA POSTGRESQL
-# ========================================
-try:
-    from database import (
-        BotWithPersistence,
-        get_trade_repo,
-        get_position_repo,
-        close_repos
-    )
-    HAS_PERSISTENCE = True
-    print("[OK] Persistencia PostgreSQL disponivel")
-except ImportError as e:
-    HAS_PERSISTENCE = False
-    print(f"[!] Persistencia nao disponivel: {e}")
+
 
 
 
@@ -84,11 +70,6 @@ class AutonomousBot:
 
         # Posições ativas
         self.active_trades: Dict[str, Dict] = {}
-
-        # Atributo para controle de persistência
-        self.use_persistence = HAS_PERSISTENCE
-        self._trade_repo = None
-        self._position_repo = None
 
         # Arquivos de dados
         self.dashboard_file = "dashboard_data.json"
@@ -1149,30 +1130,12 @@ class AutonomousBot:
 
 
 async def main():
-    """Função principal com persistência PostgreSQL."""
+    """Função principal."""
     try:
-        if HAS_PERSISTENCE:
-            print(f"\n{Fore.CYAN}{'='*70}")
-            print(f"{Fore.CYAN}  INICIALIZANDO BOT COM PERSISTÊNCIA POSTGRESQL")
-            print(f"{Fore.CYAN}{'='*70}\n")
-            bot = BotWithPersistence()
-        else:
-            print(f"\n{Fore.YELLOW}{'='*70}")
-            print(f"{Fore.YELLOW}  INICIALIZANDO BOT SEM PERSISTÊNCIA")
-            print(f"{Fore.YELLOW}{'='*70}\n")
-            from bot_master import AutonomousBot as OriginalBot
-            bot = OriginalBot()
-
+        bot = AutonomousBot()
         await bot.start()
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}Bot encerrado pelo usuário")
-    finally:
-        if HAS_PERSISTENCE:
-            try:
-                await close_repos()
-                print(f"{Fore.CYAN}🔌 Conexões PostgreSQL fechadas")
-            except Exception as e:
-                print(f"{Fore.YELLOW}Aviso: Erro ao fechar conexões: {e}")
 
 
 if __name__ == "__main__":

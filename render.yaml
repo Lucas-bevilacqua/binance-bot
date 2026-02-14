@@ -1,21 +1,112 @@
+# ============================================================================
+# RENDER BLUEPRINT - Binance Bot com PostgreSQL
+# ============================================================================
+# Documentação: https://render.com/docs/blueprint-spec
+#
+# Deploy automático ao conectar este repositório ao Render.
+# Serviço Worker: https://binance-bot-worker.onrender.com
+# Serviço Dashboard: Será criado automaticamente
+# ============================================================================
+
 services:
-  - type: web
-    name: binance-bot
-    env: docker
-    dockerfilePath: ./Dockerfile
+  # --------------------------------------------------------------------------
+  # WORKER SERVICE - Bot Autônomo (executa 24/7)
+  # --------------------------------------------------------------------------
+  - type: worker
+    name: binance-bot-worker
+    runtime: python
+    plan: free
+    region: frankfurt
+
+    # Environment variables
     envVars:
-      - key: BINANCE_API_KEY
-        sync: false
-      - key: BINANCE_API_SECRET
-        sync: false
-      - key: CAPITAL_INICIAL
-        value: "100"
-      - key: RISCO_MAXIMO_POR_OPERACAO
-        value: "0.05"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: DATABASE_URL
+        value: postgresql://bot_binance_user:2yT3u1JBiSintBfwmNlkJlSMmNJnJq@dpg-686o9jnv86c73e914jg-a.frankfurt-postgres.render.com/bot_binance
+      - key: SCAN_INTERVAL
+        value: "60"
+      - key: MONITOR_INTERVAL
+        value: "15"
+      - key: MAX_POSITIONS
+        value: "3"
+      - key: MIN_SIGNAL_STRENGTH
+        value: "28"
       - key: ALAVANCAGEM_PADRAO
-        value: "20"
+        value: "50"
+      - key: RISCO_MAXIMO_POR_OPERACAO
+        value: "0.12"
       - key: STOP_LOSS_PERCENTUAL
         value: "0.015"
       - key: TAKE_PROFIT_PERCENTUAL
-        value: "0.03"
-    startCommand: bash start.sh
+        value: "0.025"
+
+    # Build settings
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/init_render_env.py && python bot_master.py
+
+    # Auto-deploy do branch main
+    branch: main
+
+  # --------------------------------------------------------------------------
+  # WEB SERVICE - Dashboard Streamlit
+  # --------------------------------------------------------------------------
+  - type: web
+    name: binance-dashboard
+    runtime: python
+    plan: free
+    region: frankfurt
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: PORT
+        value: "8501"
+      - key: DATABASE_URL
+        value: postgresql://bot_binance_user:2yT3u1JBiSintBfwmNlkJlSMmNJnJq@dpg-686o9jnv86c73e914jg-a.frankfurt-postgres.render.com/bot_binance
+      - key: STREAMLIT_SERVER_HEADLESS
+        value: "true"
+      - key: STREAMLIT_SERVER_ADDRESS
+        value: 0.0.0.0
+
+    # Build settings
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run dashboard.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+
+    # Health check
+    healthCheckPath: /_stcore/health
+
+    # Dashboard acessível publicamente
+    branch: main
+
+# ============================================================================
+# NOTAS DE IMPLEMENTAÇÃO
+# ============================================================================
+#
+# 1. ANTES DO DEPLOY:
+#    - Configure variáveis sensíveis no Dashboard Render:
+#      * BINANCE_API_KEY
+#      * BINANCE_API_SECRET
+#      * OPENAI_API_KEY (opcional)
+#      * TELEGRAM_BOT_TOKEN (opcional)
+#      * TELEGRAM_CHAT_ID (opcional)
+#
+# 2. CONEXÃO COM BANCO:
+#    - O DATABASE_URL já está configurado acima
+#    - O bot detecta e usa automaticamente via database/db_integration.py
+#    - O schema.sql é aplicado automaticamente no primeiro deploy
+#
+# 3. RODAR SCHEMA SQL:
+#    O script scripts/init_render_env.py aplica automaticamente o schema
+#    se as tabelas não existirem. Não é necessário intervenção manual.
+#
+# 4. LOGS:
+#    - Acompanhe em render.com -> seu serviço -> Logs
+#    - Procure por "PostgreSQL" para confirmar conexão
+#    - "Conexão com PostgreSQL OK!" indica sucesso
+#
+# 5. VARIÁVEIS SENSÍVEIS:
+#    Nunca commit credenciais reais. Use o Dashboard do Render para:
+#    - Settings -> Environment
+#    - Adicione BINANCE_API_KEY e BINANCE_API_SECRET
+# ============================================================================

@@ -1,0 +1,96 @@
+# ============================================================================
+# CONFIGURAÇÃO SEPARADA PARA BOT WORKER
+# ============================================================================
+# Use este arquivo para deploy isolado do bot worker
+
+services:
+  - type: worker
+    name: binance-bot-worker
+    runtime: python
+    env: python
+    plan: free
+
+    # Build configuration
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+
+    # Start command
+    startCommand: python bot_master.py
+
+    # Environment variables públicas
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+      - key: SCAN_INTERVAL
+        value: 60
+
+      - key: MONITOR_INTERVAL
+        value: 15
+
+      - key: MAX_POSITIONS
+        value: 3
+
+      - key: MIN_SIGNAL_STRENGTH
+        value: 28
+
+      - key: ALAVANCAGEM_PADRAO
+        value: 50
+
+      - key: RISCO_MAXIMO_POR_OPERACAO
+        value: 0.12
+
+      - key: STOP_LOSS_PERCENTUAL
+        value: 0.015
+
+      - key: TAKE_PROFIT_PERCENTUAL
+        value: 0.025
+
+      - key: SYNC_HISTORY_DAYS
+        value: 30
+
+      # Conexão com banco de dados
+      - key: DATABASE_URL
+        fromDatabase:
+          name: binance-bot-db
+          property: internalURL
+
+    # Environment variables privadas (definir no Dashboard)
+    # Estas variáveis precisam ser configuradas manualmente
+    secretEnvVars:
+      - key: BINANCE_API_KEY
+        sync: false
+
+      - key: BINANCE_API_SECRET
+        sync: false
+
+      - key: OPENAI_API_KEY
+        sync: false
+        optional: true
+
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+        optional: true
+
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+        optional: true
+
+# --------------------------------------------------------------------------
+# NOTAS
+# --------------------------------------------------------------------------
+#
+# WORKER vs WEB:
+#   - Worker services não recebem tráfego HTTP
+#   - São ideais para background jobs e bots 24/7
+#   - Auto-restart se falhar
+#
+# SYNC_HISTORY_DAYS:
+#   Define quantos dias de histórico buscar da Binance ao iniciar
+#   Útil para reconstruir estado após restart
+#
+# SECRET ENV VARS:
+#   - sync: false significa que o valor não vem do blueprint
+#   - optional: true permite deploy sem a variável
+#   - Configure em render.com -> serviço -> Environment

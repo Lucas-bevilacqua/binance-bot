@@ -1,3 +1,4 @@
+# Binance Trading Bot - Dependencies for Render.com
 python-binance==1.0.19
 pandas==2.1.4
 numpy==1.26.3
@@ -10,3 +11,9 @@ colorama==0.4.6
 streamlit==1.30.0
 watchdog==3.0.0
 openai==1.12.0
+
+# PostgreSQL async driver for database operations
+asyncpg==0.29.0
+
+# PostgreSQL synchronous driver (fallback for schema scripts)
+psycopg2-binary==2.9.9
