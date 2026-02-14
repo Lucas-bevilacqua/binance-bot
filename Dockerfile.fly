@@ -1,0 +1,29 @@
+# Dockerfile para Fly.io
+FROM python:3.11-slim
+
+# Configurar diretório de trabalho
+WORKDIR /app
+
+# Instalar dependências do sistema
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar requirements primeiro (para cache)
+COPY requirements.txt .
+
+# Instalar dependências Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar arquivos do bot
+COPY bot_master.py .
+COPY .env.example .env
+
+# Criar um health endpoint simples
+RUN echo 'from flask import Flask\napp = Flask(__name__)\n@app.route("/health")\ndef health():\n    return {"status": "ok"}\nif __name__ == "__main__":\n    app.run(host="0.0.0.0", port=8080)' > health_server.py
+
+# Expor porta
+EXPOSE 8080
+
+# Comando de start
+CMD python -u bot_master.py
