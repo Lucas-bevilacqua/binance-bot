@@ -672,6 +672,18 @@ class AutonomousBot:
             # Colocar TP se faltar com Retry
             if not tp_order:
                 tp_side = 'SELL' if side == 'LONG' else 'BUY'
+
+                # Verificar se posição ainda existe (evitar race condition com SL executado)
+                try:
+                    positions = await self.client.futures_position_information(symbol=symbol)
+                    current_pos = next((p for p in positions if p['symbol'] == symbol), None)
+
+                    if not current_pos or float(current_pos['positionAmt']) == 0:
+                        print(f"{Fore.YELLOW}[{self.now()}] ⚠️ Posição {symbol} fechada antes do Auto-TP (SL foi executado)")
+                        return
+                except:
+                    pass  # Continua tentando de qualquer forma
+
                 for attempt in range(3):
                     try:
                         await self.client.futures_create_order(
@@ -686,6 +698,13 @@ class AutonomousBot:
                         print(f"{Fore.GREEN}[{self.now()}] 🎯 Auto-TP colocado: ${calculated_tp}")
                         break
                     except Exception as e:
+                        err_str = str(e)
+
+                        # Erro -2022: posição não existe mais (SL foi executado)
+                        if "code=-2022" in err_str or "ReduceOnly" in err_str:
+                            print(f"{Fore.YELLOW}[{self.now()}] ⚠️ Auto-TP não necessário: posição fechada (SL executado)")
+                            break
+
                         if attempt == 2:
                             print(f"{Fore.RED}[{self.now()}] Falha ao colocar Auto-TP: {e}")
                         await asyncio.sleep(1)
